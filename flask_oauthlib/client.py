@@ -572,8 +572,8 @@ class OAuthRemoteApp(object):
         client.resource_owner_secret = tup[1]
 
         param = 'signature_type'
-        if self.access_token_method == 'POST' and \
-            self.access_token_params[param] != 'POST':
+        if self.access_token_params[param] == SIGNATURE_TYPE_BODY  and \
+            self.access_token_method != 'POST':
             raise Exception(
                 "Invalid access token param: %s %s",
                 param, self.access_token_params[param]
