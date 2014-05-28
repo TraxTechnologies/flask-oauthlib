@@ -13,6 +13,7 @@ import oauthlib.oauth1
 import oauthlib.oauth2
 from functools import wraps
 from oauthlib.common import to_unicode, PY3, add_params_to_uri
+from oauthlib.oauth1 import SIGNATURE_TYPE_BODY
 from flask import request, redirect, json, session, current_app
 from werkzeug import url_quote, url_decode, url_encode
 from werkzeug import parse_options_header, cached_property
@@ -516,13 +517,25 @@ class OAuthRemoteApp(object):
 
         realm = self.request_token_params.get('realm')
         realms = self.request_token_params.get('realms')
+        signature_type = self.request_token_params.get('signature_type', None)
         if not realm and realms:
             realm = ' '.join(realms)
-        uri, headers, _ = client.sign(
-            self.expand_url(self.request_token_url), realm=realm
-        )
+        if signature_type == SIGNATURE_TYPE_BODY:
+            uri, headers, body = client.sign(
+                self.expand_url(self.request_token_url), realm=realm,
+                http_method="POST", body='', headers={
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                }
+            )
+        else:
+            uri, headers, body = client.sign(
+                self.expand_url(self.request_token_url), realm=realm
+            )
         log.debug('Generate request token header %r', headers)
-        resp, content = self.http_request(uri, headers)
+        if body:
+            resp, content = self.http_request(uri, headers, body, method='POST')
+        else:
+            resp, content = self.http_request(uri, headers)
         if resp.code not in (200, 201):
             raise OAuthException(
                 'Failed to generate request token',
@@ -558,11 +571,26 @@ class OAuthRemoteApp(object):
         client.resource_owner_key = tup[0]
         client.resource_owner_secret = tup[1]
 
-        uri, headers, data = client.sign(
-            self.expand_url(self.access_token_url),
-            _encode(self.access_token_method)
-        )
-
+        param = 'signature_type'
+        if self.access_token_method == 'POST' and \
+            self.access_token_params[param] != 'POST':
+            raise Exception(
+                "Invalid access token param: %s %s",
+                param, self.access_token_params[param]
+            )
+        if self.access_token_method == 'POST':
+            uri, headers, data = client.sign(
+                self.expand_url(self.access_token_url),
+                _encode(self.access_token_method),
+                body='', headers={
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                }
+            )
+        else:
+            uri, headers, data = client.sign(
+                self.expand_url(self.access_token_url),
+                _encode(self.access_token_method),
+           )
         resp, content = self.http_request(
             uri, headers, to_bytes(data, self.encoding),
             method=self.access_token_method
